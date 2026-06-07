@@ -11,8 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -22,12 +20,14 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: Colors.white,
-    systemNavigationBarIconBrightness: Brightness.dark,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.white,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
 
   runApp(
     MultiProvider(
@@ -96,15 +96,19 @@ class CourseITApp extends StatelessWidget {
           backgroundColor: primaryColor,
           foregroundColor: Colors.white,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.grey.shade200),
@@ -127,11 +131,11 @@ class CourseITApp extends StatelessWidget {
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 11),
       ),
       checkboxTheme: CheckboxThemeData(
-        fillColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return primaryColor;
+        fillColor: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) return primaryColor;
           return Colors.transparent;
         }),
-        checkColor: WidgetStateProperty.all(Colors.white),
+        checkColor: MaterialStateProperty.all(Colors.white),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         side: BorderSide(color: Colors.grey.shade400, width: 1.5),
       ),
@@ -161,18 +165,9 @@ class CourseITApp extends StatelessWidget {
           fontSize: 16,
           color: Color(0xFF1A1A2E),
         ),
-        bodyLarge: TextStyle(
-          fontSize: 15,
-          color: Color(0xFF3C3C5C),
-        ),
-        bodyMedium: TextStyle(
-          fontSize: 13,
-          color: Color(0xFF3C3C5C),
-        ),
-        bodySmall: TextStyle(
-          fontSize: 11,
-          color: Colors.grey,
-        ),
+        bodyLarge: TextStyle(fontSize: 15, color: Color(0xFF3C3C5C)),
+        bodyMedium: TextStyle(fontSize: 13, color: Color(0xFF3C3C5C)),
+        bodySmall: TextStyle(fontSize: 11, color: Colors.grey),
       ),
     );
   }
@@ -222,10 +217,7 @@ class _AppInitialiserState extends State<_AppInitialiser>
   @override
   Widget build(BuildContext context) {
     if (!_ready) return const _SplashScreen();
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: const AppShell(),
-    );
+    return FadeTransition(opacity: _fadeAnim, child: const AppShell());
   }
 }
 
@@ -252,10 +244,14 @@ class _SplashScreenState extends State<_SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _scaleAnim = Tween<double>(begin: 0.8, end: 1.0)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut));
-    _opacityAnim = Tween<double>(begin: 0.0, end: 1.0)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
+    _scaleAnim = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut));
+    _opacityAnim = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
     _ctrl.forward();
   }
 
@@ -282,10 +278,7 @@ class _SplashScreenState extends State<_SplashScreen>
             builder: (context, child) {
               return Opacity(
                 opacity: _opacityAnim.value,
-                child: Transform.scale(
-                  scale: _scaleAnim.value,
-                  child: child,
-                ),
+                child: Transform.scale(scale: _scaleAnim.value, child: child),
               );
             },
             child: Column(
@@ -299,7 +292,9 @@ class _SplashScreenState extends State<_SplashScreen>
                     color: Colors.white.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                        color: Colors.white.withOpacity(0.3), width: 1.5),
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1.5,
+                    ),
                   ),
                   child: const Center(
                     child: Icon(
@@ -335,7 +330,8 @@ class _SplashScreenState extends State<_SplashScreen>
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.white.withOpacity(0.7)),
+                      Colors.white.withOpacity(0.7),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -366,7 +362,11 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
   int _currentIndex = 0;
   late final PageController _pageController;
 
-  // Tab animation controllers for icon micro-interactions
+  // ── Tab icon animation controllers ───────────────────────────────────────
+  // FIX: Use standard [0.0, 1.0] bounds on the controller and drive the
+  // scale range through a Tween. Feeding lowerBound > 0 into CurvedAnimation
+  // causes curves to receive t > 1.0 mid-animation, which trips Flutter's
+  // internal assert(t >= 0.0 && t <= 1.0) and crashes on Android debug builds.
   late final List<AnimationController> _iconControllers;
   late final List<Animation<double>> _iconScales;
 
@@ -374,21 +374,26 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
+
+    // Controllers stay in the canonical [0.0 → 1.0] range.
     _iconControllers = List.generate(
       3,
       (_) => AnimationController(
         vsync: this,
-        duration: const Duration(milliseconds: 200),
-        lowerBound: 1.0,
-        upperBound: 1.25,
+        duration: const Duration(milliseconds: 220),
       ),
     );
-    _iconScales = _iconControllers
-        .map((c) =>
-            CurvedAnimation(parent: c, curve: Curves.easeOutBack))
-        .toList();
 
-    // Animate first tab
+    // The Tween maps 0→1 controller output to 1.0→1.2 scale values,
+    // so CurvedAnimation's transform() always receives a valid t ∈ [0, 1].
+    _iconScales = _iconControllers.map((c) {
+      return Tween<double>(
+        begin: 1.0,
+        end: 1.2,
+      ).animate(CurvedAnimation(parent: c, curve: Curves.easeOutBack));
+    }).toList();
+
+    // Activate the first tab immediately.
     _iconControllers[0].forward();
   }
 
@@ -403,11 +408,8 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
 
   void _onNavTap(int index) {
     if (_currentIndex == index) return;
-
-    // Reset old, animate new
     _iconControllers[_currentIndex].reverse();
     _iconControllers[index].forward();
-
     setState(() => _currentIndex = index);
     _pageController.animateToPage(
       index,
@@ -502,7 +504,7 @@ class _AppShellState extends State<AppShell> with TickerProviderStateMixin {
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
                                 color: isActive
-                                    ? const Color(0xFF1A237E).withOpacity(0.1)
+                                    ? const Color(0xFF1A237E).withOpacity(0.10)
                                     : Colors.transparent,
                                 borderRadius: BorderRadius.circular(12),
                               ),

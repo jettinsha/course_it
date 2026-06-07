@@ -5,8 +5,8 @@ import 'package:course_it/models/user_preferance.dart';
 import 'package:course_it/views/instituition_details.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/discovery_provider.dart';
 
+import '../providers/discovery_provider.dart';
 
 class MatrixComparisonView extends StatefulWidget {
   const MatrixComparisonView({super.key});
@@ -20,6 +20,10 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
   @override
   bool get wantKeepAlive => true;
 
+  // ── FIX: A single shared ScrollController drives BOTH the sticky college
+  // header row and the matrix body. Previously the header had its own private
+  // ScrollController, so swiping the body did not move the header and vice
+  // versa. Sharing one controller keeps them perfectly in sync.
   final ScrollController _horizScroll = ScrollController();
 
   @override
@@ -140,110 +144,218 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
     );
   }
 
-  // ── Main comparison matrix ──────────────────────────────────────────────
+  // ── Main comparison matrix ─────────────────────────────────────────────
+  // Layout:  [sticky label col] | [horizontally-scrolling value cols]
+  //
+  // The entire right side (header cards + all data rows) is driven by one
+  // _horizScroll controller, so header and body always move together.
   Widget _buildComparisonMatrix(
     BuildContext context,
     List<College> colleges,
     UserPreference pref,
   ) {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        children: [
-          // ── College header cards ──────────────────────────────────────
-          _buildCollegeHeaders(context, colleges, pref),
+    return Column(
+      children: [
+        // ── Pinned college header row (scrolls horizontally with body) ──
+        _buildStickyHeader(context, colleges, pref),
 
-          // ── Scrollable matrix body ────────────────────────────────────
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            controller: _horizScroll,
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              children: [
-                _buildMatrixSection(
-                  title: 'Basic Information',
-                  icon: Icons.info_outline_rounded,
-                  rows: _buildBasicInfoRows(colleges),
+        // ── Scrollable matrix body (vertical + horizontal) ──────────────
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Fixed label sidebar
+              _buildLabelSidebar(colleges, pref),
+
+              // Horizontally scrollable data columns
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  // Same controller as the header – they stay in sync.
+                  controller: _horizScroll,
+                  physics: const BouncingScrollPhysics(),
+                  child: SizedBox(
+                    width: _colWidth * colleges.length,
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildDataSection(
+                            title: 'Basic Information',
+                            icon: Icons.info_outline_rounded,
+                            rows: _buildBasicInfoRows(colleges),
+                          ),
+                          _buildDataSection(
+                            title: 'Fee Structure',
+                            icon: Icons.currency_rupee_rounded,
+                            rows: _buildFeeRows(colleges),
+                          ),
+                          _buildDataSection(
+                            title: 'Placement Statistics',
+                            icon: Icons.trending_up_rounded,
+                            rows: _buildPlacementRows(colleges),
+                          ),
+                          _buildDataSection(
+                            title: 'Academic Streams',
+                            icon: Icons.school_rounded,
+                            rows: _buildStreamRows(colleges),
+                          ),
+                          _buildDataSection(
+                            title: 'Campus Amenities',
+                            icon: Icons.apartment_rounded,
+                            rows: _buildAmenityRows(colleges),
+                          ),
+                          _buildDataSection(
+                            title: 'MAUT Match Score',
+                            icon: Icons.auto_awesome_rounded,
+                            rows: _buildMautRows(colleges, pref),
+                          ),
+                          const SizedBox(height: 80),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                _buildMatrixSection(
-                  title: 'Fee Structure',
-                  icon: Icons.currency_rupee_rounded,
-                  rows: _buildFeeRows(colleges),
-                ),
-                _buildMatrixSection(
-                  title: 'Placement Statistics',
-                  icon: Icons.trending_up_rounded,
-                  rows: _buildPlacementRows(colleges),
-                ),
-                _buildMatrixSection(
-                  title: 'Academic Streams',
-                  icon: Icons.school_rounded,
-                  rows: _buildStreamRows(colleges),
-                ),
-                _buildMatrixSection(
-                  title: 'Campus Amenities',
-                  icon: Icons.apartment_rounded,
-                  rows: _buildAmenityRows(colleges),
-                ),
-                _buildMatrixSection(
-                  title: 'MAUT Match Score',
-                  icon: Icons.auto_awesome_rounded,
-                  rows: _buildMautRows(colleges, pref),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-
-          const SizedBox(height: 80),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  // ── College header cards ──────────────────────────────────────────────────
-  Widget _buildCollegeHeaders(
+  // ── Sticky college header ──────────────────────────────────────────────
+  // Uses the SAME _horizScroll so it moves with the data columns.
+  Widget _buildStickyHeader(
     BuildContext context,
     List<College> colleges,
     UserPreference pref,
   ) {
     return Container(
       color: const Color(0xFF1A237E),
+      child: Row(
+        children: [
+          // Spacer that aligns over the label sidebar
+          Container(
+            width: _labelWidth,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: const Text(
+              'Metric',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+
+          // College header cards scroll with _horizScroll
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              controller: _horizScroll, // ← shared controller (the fix)
+              physics: const NeverScrollableScrollPhysics(),
+              // NeverScrollableScrollPhysics here because the
+              // data-column scroll view is the source of truth;
+              // this header just mirrors its offset via the
+              // shared controller.
+              child: Row(
+                children: colleges.map((c) {
+                  return _CollegeHeaderCard(
+                    college: c,
+                    onRemove: () => pref.toggleCompare(c.id),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => InstitutionDetailView(college: c),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Fixed label sidebar ────────────────────────────────────────────────
+  Widget _buildLabelSidebar(List<College> colleges, UserPreference pref) {
+    final allRows = [
+      ..._buildBasicInfoRows(colleges),
+      ..._buildFeeRows(colleges),
+      ..._buildPlacementRows(colleges),
+      ..._buildStreamRows(colleges),
+      ..._buildAmenityRows(colleges),
+      ..._buildMautRows(colleges, pref),
+    ];
+
+    // Section headers interspersed with row labels – mirror the data column
+    // structure so row heights align perfectly.
+    final sections = [
+      _SectionMeta(
+        'Basic Information',
+        Icons.info_outline_rounded,
+        _buildBasicInfoRows(colleges).length,
+      ),
+      _SectionMeta(
+        'Fee Structure',
+        Icons.currency_rupee_rounded,
+        _buildFeeRows(colleges).length,
+      ),
+      _SectionMeta(
+        'Placement Statistics',
+        Icons.trending_up_rounded,
+        _buildPlacementRows(colleges).length,
+      ),
+      _SectionMeta(
+        'Academic Streams',
+        Icons.school_rounded,
+        _buildStreamRows(colleges).length,
+      ),
+      _SectionMeta(
+        'Campus Amenities',
+        Icons.apartment_rounded,
+        _buildAmenityRows(colleges).length,
+      ),
+      _SectionMeta(
+        'MAUT Match Score',
+        Icons.auto_awesome_rounded,
+        _buildMautRows(colleges, pref).length,
+      ),
+    ];
+
+    return SizedBox(
+      width: _labelWidth,
       child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            // Row label spacer
-            Container(
-              width: 140,
-              padding: const EdgeInsets.all(16),
-              child: const Text(
-                'Metric',
-                style: TextStyle(
-                  color: Colors.white60,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            ...colleges.map(
-              (c) => _CollegeHeaderCard(
-                college: c,
-                onRemove: () => pref.toggleCompare(c.id),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => InstitutionDetailView(college: c),
-                  ),
-                ),
-              ),
-            ),
-          ],
+        physics: const NeverScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: sections.expand((section) {
+            return [
+              _LabelSectionHeader(title: section.title, icon: section.icon),
+              ...List.generate(section.rowCount, (i) {
+                // Find the right label from allRows
+                final rowIdx =
+                    sections
+                        .takeWhile((s) => s != section)
+                        .fold(0, (acc, s) => acc + s.rowCount) +
+                    i;
+                final label = rowIdx < allRows.length
+                    ? allRows[rowIdx].label
+                    : '';
+                return _LabelCell(label: label, isEven: i.isEven);
+              }),
+            ];
+          }).toList(),
         ),
       ),
     );
   }
 
-  // ── Matrix section builder ────────────────────────────────────────────────
-  Widget _buildMatrixSection({
+  // ── Data section builder ───────────────────────────────────────────────
+  Widget _buildDataSection({
     required String title,
     required IconData icon,
     required List<_MatrixRow> rows,
@@ -251,34 +363,15 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Section header
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-          child: Row(
-            children: [
-              Icon(icon, size: 16, color: const Color(0xFF1A237E)),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A237E),
-                ),
-              ),
-            ],
-          ),
-        ),
-        ...rows.asMap().entries.map(
-          (entry) =>
-              _MatrixRowWidget(row: entry.value, isEven: entry.key.isEven),
-        ),
+        _DataSectionHeader(title: title, icon: icon),
+        ...rows.asMap().entries.map((entry) {
+          return _DataRowWidget(row: entry.value, isEven: entry.key.isEven);
+        }),
       ],
     );
   }
 
-  // ── Row data builders ─────────────────────────────────────────────────────
+  // ── Row data builders ──────────────────────────────────────────────────
   List<_MatrixRow> _buildBasicInfoRows(List<College> colleges) => [
     _MatrixRow(
       label: 'Short Name',
@@ -334,7 +427,7 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
   ];
 
   List<_MatrixRow> _buildPlacementRows(List<College> colleges) {
-    latestStat(College c) =>
+    PlacementStat? latestStat(College c) =>
         c.placementHistory.isNotEmpty ? c.placementHistory.first : null;
     return [
       _MatrixRow(
@@ -359,28 +452,26 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
         label: 'Placement %',
         values: colleges.map((c) {
           final s = latestStat(c);
-          if (s == null) return 'N/A';
-          return '${s.placementPercent.toStringAsFixed(0)}%';
+          return s == null
+              ? 'N/A'
+              : '${s.placementPercent.toStringAsFixed(0)}%';
         }).toList(),
         valueType: _ValueType.highlight,
         higherIsBetter: true,
         numericValues: colleges.map((c) {
-          final s = latestStat(c);
-          return s?.placementPercent ?? 0;
+          return latestStat(c)?.placementPercent ?? 0;
         }).toList(),
       ),
       _MatrixRow(
         label: 'Median LPA',
         values: colleges.map((c) {
           final s = latestStat(c);
-          if (s == null) return 'N/A';
-          return '${s.medianLPA.toStringAsFixed(1)} LPA';
+          return s == null ? 'N/A' : '${s.medianLPA.toStringAsFixed(1)} LPA';
         }).toList(),
         valueType: _ValueType.text,
         higherIsBetter: true,
         numericValues: colleges.map((c) {
-          final s = latestStat(c);
-          return s?.medianLPA ?? 0;
+          return latestStat(c)?.medianLPA ?? 0;
         }).toList(),
       ),
     ];
@@ -393,7 +484,7 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
       valueType: _ValueType.text,
     ),
     _MatrixRow(
-      label: 'Has Engineering',
+      label: 'Engineering',
       values: colleges
           .map((c) => c.streams.contains('Engineering') ? '✓ Yes' : '✗ No')
           .toList(),
@@ -403,7 +494,7 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
           .toList(),
     ),
     _MatrixRow(
-      label: 'Has Management',
+      label: 'Management',
       values: colleges
           .map((c) => c.streams.contains('Management') ? '✓ Yes' : '✗ No')
           .toList(),
@@ -413,7 +504,7 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
           .toList(),
     ),
     _MatrixRow(
-      label: 'Has Science',
+      label: 'Science',
       values: colleges
           .map((c) => c.streams.contains('Science') ? '✓ Yes' : '✗ No')
           .toList(),
@@ -423,7 +514,7 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
   ];
 
   List<_MatrixRow> _buildAmenityRows(List<College> colleges) {
-    const amenityKeys = [
+    const amenityLabels = [
       'Gym',
       'WiFi',
       'Hostel',
@@ -439,10 +530,10 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
       'Research',
       'Medical',
     ];
-    return amenityKeys.asMap().entries.map((e) {
+    return amenityLabels.asMap().entries.map((e) {
       final key = amenitySearch[e.key];
       return _MatrixRow(
-        label: amenityKeys[e.key],
+        label: amenityLabels[e.key],
         values: colleges
             .map((c) => c.hasAmenity(key) ? '✓ Yes' : '✗ No')
             .toList(),
@@ -452,36 +543,169 @@ class _MatrixComparisonViewState extends State<MatrixComparisonView>
     }).toList();
   }
 
-  List<_MatrixRow> _buildMautRows(List<College> colleges, UserPreference pref) {
-    return [
-      _MatrixRow(
-        label: 'Match Score',
-        values: colleges
-            .map(
-              (c) => '${(c.mautScore * 100).clamp(0, 100).toStringAsFixed(1)}%',
-            )
-            .toList(),
-        valueType: _ValueType.highlight,
-        higherIsBetter: true,
-        numericValues: colleges.map((c) => c.mautScore).toList(),
+  List<_MatrixRow> _buildMautRows(
+    List<College> colleges,
+    UserPreference pref,
+  ) => [
+    _MatrixRow(
+      label: 'Match Score',
+      values: colleges
+          .map(
+            (c) => '${(c.mautScore * 100).clamp(0, 100).toStringAsFixed(1)}%',
+          )
+          .toList(),
+      valueType: _ValueType.highlight,
+      higherIsBetter: true,
+      numericValues: colleges.map((c) => c.mautScore).toList(),
+    ),
+    _MatrixRow(
+      label: 'Placement Wt.',
+      values: List.filled(
+        colleges.length,
+        '${(pref.w1Placement * 100).toStringAsFixed(0)}%',
       ),
-      _MatrixRow(
-        label: 'Placement Wt.',
-        values: List.filled(
-          colleges.length,
-          '${(pref.w1Placement * 100).toStringAsFixed(0)}%',
+      valueType: _ValueType.text,
+    ),
+    _MatrixRow(
+      label: 'Fee Wt.',
+      values: List.filled(
+        colleges.length,
+        '${(pref.w2Fee * 100).toStringAsFixed(0)}%',
+      ),
+      valueType: _ValueType.text,
+    ),
+  ];
+
+  // ── Column width constants ─────────────────────────────────────────────
+  static const double _colWidth = 180.0;
+  static const double _labelWidth = 140.0;
+}
+
+// ── Section metadata for sidebar builder ─────────────────────────────────────
+class _SectionMeta {
+  final String title;
+  final IconData icon;
+  final int rowCount;
+  const _SectionMeta(this.title, this.icon, this.rowCount);
+}
+
+// ── Label sidebar widgets ─────────────────────────────────────────────────────
+class _LabelSectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  const _LabelSectionHeader({required this.title, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 18, 8, 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF1A237E)),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1A237E),
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LabelCell extends StatelessWidget {
+  final String label;
+  final bool isEven;
+  const _LabelCell({required this.label, required this.isEven});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 50,
+      width: double.infinity,
+      color: isEven ? Colors.white : const Color(0xFFF8F9FC),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade600,
+          ),
+          overflow: TextOverflow.ellipsis,
         ),
-        valueType: _ValueType.text,
       ),
-      _MatrixRow(
-        label: 'Fee Wt.',
-        values: List.filled(
-          colleges.length,
-          '${(pref.w2Fee * 100).toStringAsFixed(0)}%',
-        ),
-        valueType: _ValueType.text,
+    );
+  }
+}
+
+// ── Data section header ───────────────────────────────────────────────────────
+class _DataSectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  const _DataSectionHeader({required this.title, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF1A237E)),
+          const SizedBox(width: 6),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1A237E),
+            ),
+          ),
+        ],
       ),
-    ];
+    );
+  }
+}
+
+// ── Data row widget ───────────────────────────────────────────────────────────
+class _DataRowWidget extends StatelessWidget {
+  final _MatrixRow row;
+  final bool isEven;
+  static const double _colWidth = 180.0;
+
+  const _DataRowWidget({required this.row, required this.isEven});
+
+  @override
+  Widget build(BuildContext context) {
+    final bestIdx = row.bestIndex;
+    return Container(
+      color: isEven ? Colors.white : const Color(0xFFF8F9FC),
+      height: 50,
+      child: Row(
+        children: row.values.asMap().entries.map((entry) {
+          final i = entry.key;
+          final isBest = bestIdx == i;
+          return _ValueCell(
+            value: entry.value,
+            valueType: row.valueType,
+            isBest: isBest,
+            boolValue: row.boolValues != null && i < row.boolValues!.length
+                ? row.boolValues![i]
+                : null,
+          );
+        }).toList(),
+      ),
+    );
   }
 }
 
@@ -490,6 +714,8 @@ class _CollegeHeaderCard extends StatelessWidget {
   final College college;
   final VoidCallback onRemove;
   final VoidCallback onTap;
+
+  static const double _colWidth = 180.0;
 
   const _CollegeHeaderCard({
     required this.college,
@@ -505,9 +731,8 @@ class _CollegeHeaderCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 180,
-        padding: const EdgeInsets.all(16),
-        margin: const EdgeInsets.only(right: 2),
+        width: _colWidth,
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.08),
           border: const Border(
@@ -516,11 +741,12 @@ class _CollegeHeaderCard extends StatelessWidget {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
                     color: isGovt
                         ? Colors.amber.withOpacity(0.2)
@@ -532,7 +758,7 @@ class _CollegeHeaderCard extends StatelessWidget {
                         ? Icons.account_balance_rounded
                         : Icons.school_rounded,
                     color: isGovt ? Colors.amber : Colors.greenAccent,
-                    size: 16,
+                    size: 14,
                   ),
                 ),
                 const Spacer(),
@@ -547,49 +773,45 @@ class _CollegeHeaderCard extends StatelessWidget {
                     child: const Icon(
                       Icons.close_rounded,
                       color: Colors.white70,
-                      size: 14,
+                      size: 13,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               college.shortName,
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w800,
-                fontSize: 16,
+                fontSize: 15,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 2),
             Text(
               college.city,
               style: const TextStyle(color: Colors.white60, fontSize: 11),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Row(
               children: [
-                const Icon(Icons.star_rounded, color: Colors.amber, size: 12),
+                const Icon(Icons.star_rounded, color: Colors.amber, size: 11),
                 const SizedBox(width: 3),
                 Text(
                   college.overallRating.toStringAsFixed(1),
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
-                    fontSize: 12,
+                    fontSize: 11,
                   ),
                 ),
+                const Spacer(),
+                const Text(
+                  'Details →',
+                  style: TextStyle(color: Colors.white38, fontSize: 9),
+                ),
               ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Tap for details →',
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: 10,
-                fontStyle: FontStyle.italic,
-              ),
             ),
           ],
         ),
@@ -598,7 +820,7 @@ class _CollegeHeaderCard extends StatelessWidget {
   }
 }
 
-// ── Matrix data models ────────────────────────────────────────────────────────
+// ── Matrix data model ─────────────────────────────────────────────────────────
 enum _ValueType { text, highlight, badge, rating, grade, bool }
 
 class _MatrixRow {
@@ -634,70 +856,19 @@ class _MatrixRow {
   }
 }
 
-// ── Matrix row widget ─────────────────────────────────────────────────────────
-class _MatrixRowWidget extends StatelessWidget {
-  final _MatrixRow row;
-  final bool isEven;
-  static const double _colWidth = 180;
-  static const double _labelWidth = 140;
-
-  const _MatrixRowWidget({required this.row, required this.isEven});
-
-  @override
-  Widget build(BuildContext context) {
-    final bestIdx = row.bestIndex;
-    return Container(
-      color: isEven ? Colors.white : const Color(0xFFF8F9FC),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // ── Label ────────────────────────────────────────────────────
-          Container(
-            width: _labelWidth,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Text(
-              row.label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ),
-          // ── Value cells ───────────────────────────────────────────────
-          ...row.values.asMap().entries.map((entry) {
-            final i = entry.key;
-            final isBest = bestIdx == i;
-            return _ValueCell(
-              value: entry.value,
-              valueType: row.valueType,
-              isBest: isBest,
-              isEven: isEven,
-              boolValue: row.boolValues != null && i < row.boolValues!.length
-                  ? row.boolValues![i]
-                  : null,
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
-
+// ── Value cell ────────────────────────────────────────────────────────────────
 class _ValueCell extends StatelessWidget {
   final String value;
   final _ValueType valueType;
   final bool isBest;
-  final bool isEven;
   final bool? boolValue;
 
-  static const double _colWidth = 180;
+  static const double _colWidth = 180.0;
 
   const _ValueCell({
     required this.value,
     required this.valueType,
     required this.isBest,
-    required this.isEven,
     this.boolValue,
   });
 
@@ -705,7 +876,8 @@ class _ValueCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: _colWidth,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      height: 50,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       decoration: BoxDecoration(
         color: isBest
             ? const Color(0xFF1A237E).withOpacity(0.06)
@@ -714,18 +886,18 @@ class _ValueCell extends StatelessWidget {
           left: BorderSide(color: Color(0xFFEEEEF5), width: 1),
         ),
       ),
-      child: _buildCellContent(),
+      child: Align(alignment: Alignment.centerLeft, child: _buildContent()),
     );
   }
 
-  Widget _buildCellContent() {
+  Widget _buildContent() {
     switch (valueType) {
       case _ValueType.highlight:
         return Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (isBest)
+            if (isBest) ...[
               Container(
-                margin: const EdgeInsets.only(right: 6),
                 padding: const EdgeInsets.all(3),
                 decoration: const BoxDecoration(
                   color: Color(0xFF1A237E),
@@ -734,19 +906,22 @@ class _ValueCell extends StatelessWidget {
                 child: const Icon(
                   Icons.arrow_upward_rounded,
                   color: Colors.white,
-                  size: 10,
+                  size: 9,
                 ),
               ),
-            Expanded(
+              const SizedBox(width: 5),
+            ],
+            Flexible(
               child: Text(
                 value,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: isBest
                       ? const Color(0xFF1A237E)
                       : const Color(0xFF1A1A2E),
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -754,13 +929,14 @@ class _ValueCell extends StatelessWidget {
 
       case _ValueType.rating:
         return Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.star_rounded, color: Color(0xFFFFB300), size: 14),
+            const Icon(Icons.star_rounded, color: Color(0xFFFFB300), size: 13),
             const SizedBox(width: 4),
             Text(
               value,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: isBest
                     ? const Color(0xFF1A237E)
@@ -772,15 +948,15 @@ class _ValueCell extends StatelessWidget {
 
       case _ValueType.grade:
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
             color: _gradeColor(value).withOpacity(0.12),
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(5),
           ),
           child: Text(
             value,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
               color: _gradeColor(value),
             ),
@@ -790,17 +966,17 @@ class _ValueCell extends StatelessWidget {
       case _ValueType.badge:
         final isGovt = value.contains('Government') || value.contains('Public');
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
             color: isGovt
                 ? const Color(0xFF1A237E).withOpacity(0.08)
                 : const Color(0xFF00897B).withOpacity(0.08),
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(5),
           ),
           child: Text(
             isGovt ? 'Government' : 'Private',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w600,
               color: isGovt ? const Color(0xFF1A237E) : const Color(0xFF00897B),
             ),
@@ -810,13 +986,14 @@ class _ValueCell extends StatelessWidget {
       case _ValueType.bool:
         final isTrue = boolValue ?? value.contains('✓');
         return Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               isTrue ? Icons.check_circle_rounded : Icons.cancel_rounded,
-              size: 16,
+              size: 15,
               color: isTrue ? const Color(0xFF2E7D32) : Colors.grey.shade400,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Text(
               isTrue ? 'Yes' : 'No',
               style: TextStyle(
@@ -837,6 +1014,7 @@ class _ValueCell extends StatelessWidget {
             color: Color(0xFF3C3C5C),
             fontWeight: FontWeight.w500,
           ),
+          overflow: TextOverflow.ellipsis,
         );
     }
   }
